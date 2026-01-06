@@ -1,0 +1,18 @@
+[binaries]
+c = 'aarch64-linux-gnu-gcc'
+cpp = 'aarch64-linux-gnu-g++'
+ar = 'aarch64-linux-gnu-gcc-ar'
+linker = 'aarch64-linux-gnu-ld'
+strip = 'aarch64-linux-gnu-strip'
+pkgconfig = 'pkg-config'
+pcap-config = ''
+
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'armv8-a'
+endian = 'little'
+
+[properties]
+# Generate binaries that are portable across all Armv8 machines
+platform = 'generic'

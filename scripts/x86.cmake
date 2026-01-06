@@ -1,0 +1,7 @@
+if(EXISTS "/usr/local/gcc-12.3.0/bin")
+  set(CMAKE_C_COMPILER "/usr/local/gcc-12.3.0/bin/gcc")
+  set(CMAKE_CXX_COMPILER "/usr/local/gcc-12.3.0/bin/g++")
+elseif(EXISTS "/usr/bin")
+  set(CMAKE_C_COMPILER "/usr/bin/gcc")
+  set(CMAKE_CXX_COMPILER "/usr/bin/g++")
+endif()
