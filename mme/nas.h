@@ -284,6 +284,8 @@ public:
   bool start_timer(enum nas_timer_type type);
   bool expire_timer(enum nas_timer_type type);
 
+  bool use_cp_ciot();
+
   /* UE Context */
   emm_ctx_t m_emm_ctx                   = {};
   ecm_ctx_t m_ecm_ctx                   = {};

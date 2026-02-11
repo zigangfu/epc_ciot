@@ -2835,7 +2835,6 @@ LIBLTE_ERROR_ENUM liblte_mme_unpack_nb_ue_network_capability_ie(uint8**         
 
   if (ie_ptr != NULL && ue_network_cap != NULL) {
     length = **ie_ptr;
-    printf("LIBMME:--------------------liblte_mme_unpack_nb_ue_network_capability_ie, length=%d\n",length);
     *ie_ptr += 1;
     ue_network_cap->eea[0] = (**ie_ptr >> 7) & 0x01;
     ue_network_cap->eea[1] = (**ie_ptr >> 6) & 0x01;
@@ -2902,17 +2901,17 @@ LIBLTE_ERROR_ENUM liblte_mme_unpack_nb_ue_network_capability_ie(uint8**         
       ue_network_cap->nf_present        = false;
     }
     if (length > 5) {
-      ue_network_cap->s1udata               = (**ie_ptr >> 4) & 0x01;
-      ue_network_cap->s1udata_present       = true;
-      ue_network_cap->upciot               = (**ie_ptr >> 3) & 0x01;
-      ue_network_cap->upciot_present       = true;
-      ue_network_cap->cpciot         = (**ie_ptr >> 2) & 0x01;
-      ue_network_cap->cpciot_present = true;
+      ue_network_cap->s1udata           = (**ie_ptr >> 4) & 0x01;
+      ue_network_cap->s1udata_present   = true;
+      ue_network_cap->upciot            = (**ie_ptr >> 3) & 0x01;
+      ue_network_cap->upciot_present    = true;
+      ue_network_cap->cpciot            = (**ie_ptr >> 2) & 0x01;
+      ue_network_cap->cpciot_present    = true;
       *ie_ptr += 1;
     } else {
-      ue_network_cap->s1udata_present       = false;
-      ue_network_cap->upciot_present       = false;
-      ue_network_cap->cpciot_present = false;
+      ue_network_cap->s1udata_present   = false;
+      ue_network_cap->upciot_present    = false;
+      ue_network_cap->cpciot_present    = false;
     }
     if (length > 6) {
       *ie_ptr += length - 6;
@@ -4759,13 +4758,13 @@ LIBLTE_ERROR_ENUM liblte_mme_pack_attach_accept_msg(LIBLTE_MME_ATTACH_ACCEPT_MSG
 
     // Fill in the number of bytes used
     msg->N_bytes = msg_ptr - msg->msg;
-
-    printf("LIB-MME: liblte_mme_pack_attach_accept_msg------------msg length=%d\n",msg->N_bytes);
+#if 0
+    printf("LIB-MME: liblte_mme_pack_attach_accept_msg, msg length=%d\n", msg->N_bytes);
     for(uint32_t i =0; i<msg->N_bytes; i++){
       printf("0x%x ", msg->msg[i]);
     }
-    printf("\nLIB-MME: liblte_mme_pack_attach_accept_msg------------msg End\n");
-
+    printf("\nLIB-MME: liblte_mme_pack_attach_accept_msg, msg End\n");
+#endif
     err = LIBLTE_SUCCESS;
   }
 

@@ -244,7 +244,6 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srslte::gtpc_header& 
   m_gtpc_log->info("Received Modified Bearer Request\n");
 
   // Get control tunnel info from mb_req PDU
-  printf("==========================gtpc  teid is %u -------------------------\n", mb_req_hdr.teid); // emm 03
   uint32_t                                         ctrl_teid = mb_req_hdr.teid;
   std::map<uint32_t, spgw_tunnel_ctx_t*>::iterator tunnel_it = m_teid_to_tunnel_ctx.find(ctrl_teid);
   if (tunnel_it == m_teid_to_tunnel_ctx.end()) {
@@ -254,17 +253,8 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srslte::gtpc_header& 
   spgw_tunnel_ctx_t* tunnel_ctx = tunnel_it->second;
 
   // Store user DW link TEID
-  if (!tunnel_ctx->is_s11u) {
-    // This is normal S1-U tunnel to eNB
-    printf("=======================not is s11u===============================\n");
-    tunnel_ctx->dw_user_fteid.teid = mb_req.eps_bearer_context_to_modify.s1_u_enb_f_teid.teid;
-    tunnel_ctx->dw_user_fteid.ipv4 = mb_req.eps_bearer_context_to_modify.s1_u_enb_f_teid.ipv4;
-  } else {
-
-    printf("=======================is s11u===============================\n");
-    tunnel_ctx->dw_user_fteid.teid = mb_req.eps_bearer_context_to_modify.s11_u_mme_f_teid.teid;
-    tunnel_ctx->dw_user_fteid.ipv4 = mb_req.eps_bearer_context_to_modify.s11_u_mme_f_teid.ipv4;
-  }
+  tunnel_ctx->dw_user_fteid.teid = mb_req.eps_bearer_context_to_modify.s1_u_enb_f_teid.teid;
+  tunnel_ctx->dw_user_fteid.ipv4 = mb_req.eps_bearer_context_to_modify.s1_u_enb_f_teid.ipv4;
   // Set up actual tunnel
   m_gtpc_log->info("Setting Up GTP-U tunnel. Tunnel info: \n");
   struct in_addr addr;
@@ -282,7 +272,7 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srslte::gtpc_header& 
   struct in_addr addr3;
   addr3.s_addr = tunnel_ctx->dw_user_fteid.ipv4;
   if (!tunnel_ctx->is_s11u) {
-    m_gtpc_log->info("eNB Rx User TEID 0x%x, eNB Rx User IP %s\n", tunnel_ctx->dw_user_fteid.teid, inet_ntoa(addr3));
+    m_gtpc_log->info("S1-U eNB Rx User TEID 0x%x, eNB Rx User IP %s\n", tunnel_ctx->dw_user_fteid.teid, inet_ntoa(addr3));
   } else {
     m_gtpc_log->info("S11-U MME Rx User TEID 0x%x, MME Rx User IP %s\n", tunnel_ctx->dw_user_fteid.teid, inet_ntoa(addr3));
   }
@@ -485,7 +475,14 @@ spgw_tunnel_ctx_t* spgw::gtpc::create_gtpc_ctx(const struct srslte::gtpc_create_
   tunnel_ctx->up_user_fteid.ipv4 = m_gtpu->get_s1u_addr();
   tunnel_ctx->dw_ctrl_fteid.teid = cs_req.sender_f_teid.teid;
   tunnel_ctx->dw_ctrl_fteid.ipv4 = cs_req.sender_f_teid.ipv4;
-  bzero(&tunnel_ctx->dw_user_fteid, sizeof(srslte::gtp_fteid_t));
+  if (tunnel_ctx->is_s11u) {
+    tunnel_ctx->dw_user_fteid.ipv4_present = true;
+    tunnel_ctx->dw_user_fteid.teid = cs_req.sender_f_teid.teid;
+    tunnel_ctx->dw_user_fteid.ipv4 = cs_req.sender_f_teid.ipv4;
+  }
+  else{
+    bzero(&tunnel_ctx->dw_user_fteid, sizeof(srslte::gtp_fteid_t));
+  }
 
   m_teid_to_tunnel_ctx.insert(std::pair<uint32_t, spgw_tunnel_ctx_t*>(spgw_uplink_ctrl_teid, tunnel_ctx));
   m_imsi_to_ctr_teid.insert(std::pair<uint64_t, uint32_t>(cs_req.imsi, spgw_uplink_ctrl_teid));

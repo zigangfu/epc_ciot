@@ -1,5 +1,5 @@
 project('epc_ciot', ['c', 'cpp'],
-  default_options : ['buildtype=release'])
+  default_options : ['buildtype=debug'])
 add_global_arguments(language : ['c','cpp'])
 add_global_arguments('-Wno-reorder', '-Wno-non-virtual-dtor', language : ['cpp'])
 
@@ -16,34 +16,24 @@ arch = host_machine.cpu_family()
 sctp_lib_dirs = []
 extra_link_args = []
 extra_include_dirs = []
+toolchain_path = []
+sysroot_path = []
 
 if arch == 'aarch64'
   message('Configuring for ARM64 target')
-  
-  # set the ARM64 toolchain path
-  toolchain_path = '/opt/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu'
-  
-  sysroot_path = toolchain_path / 'aarch64-linux-gnu' / 'libc'
-  
+
   sctp_lib_dirs = [
-    sysroot_path / 'usr' / 'lib',
+    '/usr/lib64',
     '/usr/aarch64-linux-gnu/lib'
   ]
-  
-  extra_link_args = [
-    '-Wl,-rpath-link=' + (sysroot_path / 'usr' / 'lib')
-  ]
-  
-  extra_include_dirs = [
-    sysroot_path / 'usr' / 'include'
-  ]
-  
+ 
   add_project_arguments('-DARCH_ARM64', language: ['c', 'cpp'])
   
 elif arch == 'x86_64'
   message('Configuring for x86_64 target')
   
   sctp_lib_dirs = [
+    '/usr/lib64',
     '/usr/lib/x86_64-linux-gnu'
   ]
   
@@ -51,6 +41,32 @@ elif arch == 'x86_64'
   
 else
   error('Unsupported architecture: ' + arch)
+endif
+
+# get the ARM64 toolchain path
+toolchain_path = run_command('printenv', 'PATH_TOOLCHAIN_AARCH64', check: false).stdout().strip()
+message('  Toolchain: ' + toolchain_path)
+if toolchain_path.contains('aarch64')
+  message('Configuring for cross extra paths')
+
+  sysroot_path = toolchain_path / 'aarch64-linux-gnu' / 'libc'
+
+  sctp_lib_dirs = [
+    sysroot_path / 'usr' / 'lib',
+    '/usr/lib64',
+    '/usr/aarch64-linux-gnu/lib'
+  ]
+  
+  extra_link_args = [
+    '-Wl,-rpath-link=' + (sysroot_path / 'usr' / 'lib')
+  ]
+
+  extra_include_dirs = [
+    sysroot_path / 'usr' / 'include'
+  ]
+
+  message('  Toolchain: ' + toolchain_path)
+  message('  Sysroot: ' + sysroot_path)
 endif
 
 # SCTP dependency
@@ -72,10 +88,6 @@ endif
 message('')
 message('Build configuration:')
 message('  Architecture: ' + arch)
-if arch == 'aarch64'
-  message('  Toolchain: ' + toolchain_path)
-  message('  Sysroot: ' + sysroot_path)
-endif
 message('')
 
 # MbedTLS libraries

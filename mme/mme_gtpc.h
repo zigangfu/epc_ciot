@@ -42,6 +42,7 @@ public:
     srslte::gtp_fteid_t mme_ctr_fteid;
     srslte::gtp_fteid_t sgw_ctr_fteid;
     bool                cp_ciot;
+    bool                up_ciot;
   } gtpc_ctx_t;
 
   static mme_gtpc* get_instance(void);

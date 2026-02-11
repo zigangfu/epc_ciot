@@ -96,6 +96,13 @@ bool s1ap_ctx_mngmt_proc::send_initial_context_setup_request(nas* nas_ctx, uint1
   in_ctx_req.ueaggregate_maximum_bitrate.value.ueaggregate_maximum_bit_rate_dl = 1000000000;
   in_ctx_req.ueaggregate_maximum_bitrate.value.ueaggregate_maximum_bit_rate_ul = 1000000000;
 
+  // NB-DRB-TEST-ADD
+  if (!nas_ctx->use_cp_ciot()) {
+    in_ctx_req.ueuser_plane_cio_tsupport_ind_present = true;
+    in_ctx_req.ueuser_plane_cio_tsupport_ind.value = 
+        asn1::s1ap::ueuser_plane_cio_tsupport_ind_e::supported;
+  }
+
   // Number of E-RABs to be setup
   in_ctx_req.erab_to_be_setup_list_ctxt_su_req.value.resize(1);
   in_ctx_req.erab_to_be_setup_list_ctxt_su_req.value[0].load_info_obj(ASN1_S1AP_ID_ERAB_TO_BE_SETUP_ITEM_CTXT_SU_REQ);
@@ -171,9 +178,6 @@ bool s1ap_ctx_mngmt_proc::send_initial_context_setup_request(nas* nas_ctx, uint1
                    in_ctx_req.enb_ue_s1ap_id.value.value,
                    in_ctx_req.mme_ue_s1ap_id.value.value);
   m_s1ap_log->info("Initial Context Setup Request -- E-RAB id %d\n", erab_ctx_req.erab_id);
-  m_s1ap_log->info("Initial Context Setup Request -- S1-U TEID 0x%" PRIu64 ". IP %s \n",
-                   erab_ctx_req.gtp_teid.to_number(),
-                   inet_ntoa(addr));
   m_s1ap_log->info("Initial Context Setup Request -- S1-U TEID 0x%" PRIu64 ". IP %s \n",
                    erab_ctx_req.gtp_teid.to_number(),
                    inet_ntoa(addr));
@@ -259,8 +263,10 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_request(const asn1::s1ap::ue
   emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
   ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
 
-  // Delete user plane context at the SPGW (but keep GTP-C connection).
+  // Send release context command to eNB, so that it can release it's bearers
   if (ecm_ctx->state == ECM_STATE_CONNECTED) {
+#if 0
+    // Delete user plane context at the SPGW (but keep GTP-C connection).
     // There are active E-RABs, send release access mearers request
     m_s1ap_log->console("There are active E-RABs, send release access bearers request\n");
     m_s1ap_log->info("There are active E-RABs, send release access bearers request\n");
@@ -270,6 +276,7 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_request(const asn1::s1ap::ue
     m_mme_gtpc->send_release_access_bearers_request(emm_ctx->imsi);
 
     // Send release context command to enb, so that it can release it's bearers
+#endif
     send_ue_context_release_command(nas_ctx);
   } else {
     // No ECM Context to release
@@ -287,6 +294,42 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_request(const asn1::s1ap::ue
 
 bool s1ap_ctx_mngmt_proc::send_ue_context_release_command(nas* nas_ctx)
 {
+  emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
+  ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
+
+  if (ecm_ctx->state != ECM_STATE_CONNECTED) {
+    m_s1ap_log->error("UE is not ECM connected. No send context release command. MME UE S1AP Id %d\n",
+                      ecm_ctx->mme_ue_s1ap_id);
+    return false;
+  }
+
+  // Detect weather there are active E-RABs
+  bool active_erabs = false;
+  for (esm_ctx_t& esm_ctx : nas_ctx->m_esm_ctx) {
+    if (esm_ctx.state != ERAB_DEACTIVATED) {
+      active_erabs = true;
+      break;
+    }
+  }
+
+  // On some circumstances, such as the NAS Detach, the UE context has already been cleared from
+  // the SPGW. In such cases, there is no need to send the GTP-C Release Access Bearers Request.
+  if (active_erabs) {
+    // There are active E-RABs, send release access mearers request
+    m_s1ap_log->console("There are active E-RABs, send release access bearers request\n");
+    m_s1ap_log->info("There are active E-RABs, send release access bearers request\n");
+
+    // The handle_release_access_bearers_response function will make sure to mark E-RABS DEACTIVATED
+    // It will release the UEs downstream S1-u and keep the upstream S1-U connection active.
+    m_mme_gtpc->send_release_access_bearers_request(emm_ctx->imsi);
+  }
+
+  // Mark ECM state as IDLE and de-activate E-RABs
+  ecm_ctx->state = ECM_STATE_IDLE;
+  for (esm_ctx_t& esm_ctx : nas_ctx->m_esm_ctx) {
+    esm_ctx.state = ERAB_DEACTIVATED;
+  }
+
   // Prepare reply PDU
   s1ap_pdu_t tx_pdu;
   tx_pdu.set_init_msg().load_info_obj(ASN1_S1AP_ID_UE_CONTEXT_RELEASE);
@@ -321,6 +364,7 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_complete(const asn1::s1ap::u
     m_s1ap_log->console("No UE context to release found. MME-UE S1AP Id: %d\n", mme_ue_s1ap_id);
     return false;
   }
+#if 0
   emm_ctx_t* emm_ctx = &nas_ctx->m_emm_ctx;
   ecm_ctx_t* ecm_ctx = &nas_ctx->m_ecm_ctx;
 
@@ -341,7 +385,7 @@ bool s1ap_ctx_mngmt_proc::handle_ue_context_release_complete(const asn1::s1ap::u
       esm_ctx.state = ERAB_DEACTIVATED;
     }
   }
-
+#endif
   // Delete UE context
   m_s1ap->release_ue_ecm_ctx(nas_ctx->m_ecm_ctx.mme_ue_s1ap_id);
   m_s1ap_log->info("UE Context Release Completed.\n");

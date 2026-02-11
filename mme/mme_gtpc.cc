@@ -196,7 +196,6 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi, bool cp_ciot)
 {
   m_mme_gtpc_log->info("Sending Create Session Request.\n");
   m_mme_gtpc_log->console("Sending Create Session Request.\n");
-  printf("=======================Sending Create Session Request================.\n");
   struct srslte::gtpc_pdu                     cs_req_pdu;
   struct srslte::gtpc_create_session_request* cs_req = &cs_req_pdu.choice.create_session_request;
 
@@ -222,10 +221,6 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi, bool cp_ciot)
   m_mme_gtpc_log->console("Creating Session Response -- IMSI: %" PRIu64 "\n", imsi);
   m_mme_gtpc_log->console("Creating Session Response -- MME control TEID: %d\n", cs_req->sender_f_teid.teid);
 
-
-  printf("==========================Creating Session Response -- IMSI: %" PRIu64 " =====================\n", imsi);
-  printf("==========================Creating Session Response -- MME control TEID: %d=====================\n", cs_req->sender_f_teid.teid);
-
   // APN
   strncpy(cs_req->apn, m_s1ap->m_s1ap_args.mme_apn.c_str(), sizeof(cs_req->apn) - 1);
   cs_req->apn[sizeof(cs_req->apn) - 1] = 0;
@@ -248,10 +243,10 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi, bool cp_ciot)
     if (jt == m_mme_ctr_teid_to_imsi.end()) {
         m_mme_gtpc_log->error("Could not find IMSI from MME Ctrl TEID. MME Ctr TEID: %d\n",
                               it->second.mme_ctr_fteid.teid);
-        printf("=======Creating Session Response===========Could not find IMSI from MME Ctrl TEID. MME Ctr TEID: %d============================\n",
-                    it->second.mme_ctr_fteid.teid);
+        m_mme_gtpc_log->console("Could not find IMSI from MME Ctrl TEID. MME Ctr TEID: %d\n",
+                              it->second.mme_ctr_fteid.teid);
     } else {
-      printf("=======Creating Session Response======send_create_session_request=======m_mme_ctr_teid_to_imsi.erase==========================\n");
+      m_mme_gtpc_log->console("send_create_session_request, m_mme_ctr_teid_to_imsi.erase\n");
       m_mme_ctr_teid_to_imsi.erase(jt);
     }
     m_imsi_to_gtpc_ctx.erase(it);
@@ -260,23 +255,17 @@ bool mme_gtpc::send_create_session_request(uint64_t imsi, bool cp_ciot)
   }
 
   // Save RX Control TEID
-  auto insert_1 = m_mme_ctr_teid_to_imsi.insert(std::pair<uint32_t, uint64_t>(cs_req->sender_f_teid.teid, imsi));
-  if (!insert_1.second)
-  {
-    printf("!!!!!!!!!!!!!!!!!!!!!!!Creating Session Response!!!!!!!!!!!!!!!!!!!!!!!!!  m_mme_ctr_teid_to_imsi.insert fail!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-  }
-  printf("========Creating Session Response============NB-IoT: send_create_session_request: Map TEID %d to IMSI %ld==============\n",cs_req->sender_f_teid.teid, imsi);
+  m_mme_ctr_teid_to_imsi.emplace(cs_req->sender_f_teid.teid, imsi);
+  m_mme_gtpc_log->console("send_create_session_request: Map TEID %d to IMSI %ld\n",
+            cs_req->sender_f_teid.teid, imsi);
 
   // Save GTP-C context
   gtpc_ctx_t gtpc_ctx;
-  bzero(&gtpc_ctx, sizeof(gtpc_ctx_t));
+  std::memset(&gtpc_ctx, 0, sizeof(gtpc_ctx_t));
   gtpc_ctx.mme_ctr_fteid = cs_req->sender_f_teid;
   gtpc_ctx.cp_ciot       = cp_ciot;
-  auto insert_2 = m_imsi_to_gtpc_ctx.insert(std::pair<uint64_t, gtpc_ctx_t>(imsi, gtpc_ctx));
-  if (!insert_2.second)
-  {
-    printf("!!!!!!!!!Creating Session Response!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  m_imsi_to_gtpc_ctx.insert fail!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-  }
+  gtpc_ctx.up_ciot       = !cp_ciot;
+  m_imsi_to_gtpc_ctx.emplace(imsi, gtpc_ctx);
 
   // Send msg to SPGW
   send_s11_pdu(cs_req_pdu);
@@ -288,7 +277,6 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
   struct srslte::gtpc_create_session_response* cs_resp = &cs_resp_pdu->choice.create_session_response;
   m_mme_gtpc_log->info("Received Create Session Response\n");
   m_mme_gtpc_log->console("Received Create Session Response\n");
-  printf("==========handle_create_session_response=========Received Create Session Response======================\n");
   if (cs_resp_pdu->header.type != srslte::GTPC_MSG_TYPE_CREATE_SESSION_RESPONSE) {
     m_mme_gtpc_log->warning("Could not create GTPC session. Not a create session response\n");
     // TODO Handle error
@@ -304,7 +292,7 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
   std::map<uint32_t, uint64_t>::iterator id_it = m_mme_ctr_teid_to_imsi.find(cs_resp_pdu->header.teid);
   if (id_it == m_mme_ctr_teid_to_imsi.end()) {
     m_mme_gtpc_log->warning("Could not find IMSI from Ctrl TEID.\n");
-    printf("==============handle_create_session_response=============Could not find IMSI from Ctrl TEID.=========================\n");
+    m_mme_gtpc_log->console("Could not find IMSI from Ctrl TEID.\n");
     return false;
   }
   uint64_t imsi = id_it->second;
@@ -368,22 +356,24 @@ bool mme_gtpc::handle_create_session_response(srslte::gtpc_pdu* cs_resp_pdu)
   esm_ctx->pdn_addr_alloc   = cs_resp->paa;
   esm_ctx->sgw_s1u_fteid    = cs_resp->eps_bearer_context_created.s1_u_sgw_f_teid;
 
-  // TODO: NB-IoT: Do not need to send the initial context setup
-  m_s1ap->m_s1ap_ctx_mngmt_proc->send_initial_context_setup_request(nas_ctx, default_bearer);
+  if (!nas_ctx->use_cp_ciot()) {
+    // NB UP CIoT: Send the initial context setup
+    m_s1ap->m_s1ap_ctx_mngmt_proc->send_initial_context_setup_request(nas_ctx, default_bearer);
+  }
+  else {
+    // NB CP CIoT: Send Attach Accept to UE
+    srslte::byte_buffer_t* nas_tx;
+    srslte::byte_buffer_pool* pool = srslte::byte_buffer_pool::get_instance();
 
-  // TODO: NB-IoT: Send Attach Accept to UE
-  srslte::byte_buffer_t* nas_tx;
-  srslte::byte_buffer_pool* pool = srslte::byte_buffer_pool::get_instance();
+    nas_tx = pool->allocate();
+    nas_ctx->pack_attach_accept(nas_tx);
 
-  nas_tx = pool->allocate();
-  nas_ctx->pack_attach_accept(nas_tx);
+    m_s1ap->send_downlink_nas_transport(ecm_ctx->enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id, nas_tx, ecm_ctx->enb_sri);
+    pool->deallocate(nas_tx);
 
-  m_s1ap->send_downlink_nas_transport(ecm_ctx->enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id, nas_tx, ecm_ctx->enb_sri);
-  pool->deallocate(nas_tx);
-
-  m_mme_gtpc_log->console("NB-IoT: --------------------------- Sending Attach Accept\n");
-  m_mme_gtpc_log->info("NB-IoT: --------------------------- Sending Attach Accept\n");
-
+    m_mme_gtpc_log->info("CIoT: Sending Attach Accept\n");
+    m_mme_gtpc_log->console("CIoT: Sending Attach Accept\n");
+  }
   return true;
 }
 
@@ -391,6 +381,7 @@ bool mme_gtpc::send_modify_bearer_request(uint64_t imsi, uint16_t erab_to_modify
 {
   m_mme_gtpc_log->info("Sending GTP-C Modify bearer request\n");
   srslte::gtpc_pdu mb_req_pdu;
+  std::memset(&mb_req_pdu, 0, sizeof(mb_req_pdu));
 
   std::map<uint64_t, gtpc_ctx_t>::iterator it = m_imsi_to_gtpc_ctx.find(imsi);
   if (it == m_imsi_to_gtpc_ctx.end()) {
@@ -406,22 +397,15 @@ bool mme_gtpc::send_modify_bearer_request(uint64_t imsi, uint16_t erab_to_modify
 
   srslte::gtpc_modify_bearer_request* mb_req                = &mb_req_pdu.choice.modify_bearer_request;
   mb_req->eps_bearer_context_to_modify.ebi                  = erab_to_modify;
-//  mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.ipv4 = enb_fteid->ipv4;
-//  mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.teid = enb_fteid->teid;
-  if (!it->second.cp_ciot) {
-    mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.ipv4 = enb_fteid->ipv4;
-    mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.teid = enb_fteid->teid;
-  } else {
-    mb_req->eps_bearer_context_to_modify.s11_u_mme_f_teid.ipv4 = enb_fteid->ipv4;
-    mb_req->eps_bearer_context_to_modify.s11_u_mme_f_teid.teid = enb_fteid->teid;
-  }
+  mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.ipv4 = enb_fteid->ipv4;
+  mb_req->eps_bearer_context_to_modify.s1_u_enb_f_teid.teid = enb_fteid->teid;
 
   m_mme_gtpc_log->info("GTP-C Modify bearer request -- S-GW Control TEID %d\n", sgw_ctr_fteid.teid);
-  m_mme_gtpc_log->console("NB-IoT: mme_gtpc-------------------- GTP-C Modify bearer request -- S-GW Control TEID %d\n", sgw_ctr_fteid.teid); // emm  02
+  m_mme_gtpc_log->console("CToT mme_gtpc modify bearer request -- S-GW Control TEID %d\n", sgw_ctr_fteid.teid); // emm  02
   struct in_addr addr;
   addr.s_addr = enb_fteid->ipv4;
   m_mme_gtpc_log->info("GTP-C Modify bearer request -- S1-U TEID 0x%x, IP %s\n", enb_fteid->teid, inet_ntoa(addr));
-  m_mme_gtpc_log->console("NB-IoT: mme_gtpc-------------------- GTP-C Modify bearer request -- S1-U TEID 0x%x, IP %s\n", enb_fteid->teid, inet_ntoa(addr)); // emm  02
+  m_mme_gtpc_log->console("CToT mme_gtpc modify bearer request -- S1-U TEID 0x%x, IP %s\n", enb_fteid->teid, inet_ntoa(addr)); // emm  02
 
   // Send msg to SPGW
   send_s11_pdu(mb_req_pdu);
@@ -434,18 +418,16 @@ void mme_gtpc::handle_modify_bearer_response(srslte::gtpc_pdu* mb_resp_pdu)
   std::map<uint32_t, uint64_t>::iterator imsi_it       = m_mme_ctr_teid_to_imsi.find(mme_ctrl_teid);
   if (imsi_it == m_mme_ctr_teid_to_imsi.end()) {
     m_mme_gtpc_log->error("Could not find IMSI from control TEID\n");
-    printf("========handle_modify_bearer_response=================handle_modify_bearer_response Could not find IMSI from control TEID===============================\n");
+    m_mme_gtpc_log->console("Could not find IMSI from control TEID\n");
     return;
-  } else {
-    printf("===========handle_modify_bearer_response====NB-IoT: s11u_ep::handle_s11u_pdu---------------------find IMSI=%ld from control TEID %d\n", imsi_it->second, mme_ctrl_teid);
   }
+  m_mme_gtpc_log->console("Got response modify bearer response from SPGW, IMSI=%ld, ctrl_teid=%d\n",
+      imsi_it->second, mme_ctrl_teid); //emm 04
 
   uint8_t ebi = mb_resp_pdu->choice.modify_bearer_response.eps_bearer_context_modified.ebi;
   m_mme_gtpc_log->debug("Activating EPS bearer with id %d\n", ebi);
   m_mme_gtpc_log->console("Activating EPS bearer with id %d\n", ebi);
   m_s1ap->activate_eps_bearer(imsi_it->second, ebi);
-
-  printf("NB-IoT: handle_modify_bearer_response---------- Got response modify bearer response from SPGW\n"); //emm 04
 
   srslte::byte_buffer_pool* pool = srslte::byte_buffer_pool::get_instance();
 
@@ -458,33 +440,33 @@ void mme_gtpc::handle_modify_bearer_response(srslte::gtpc_pdu* mb_resp_pdu)
 
   // Send Service Accept to UE
   nas* nas_ctx = m_s1ap->find_nas_ctx_from_imsi(imsi_it->second);
-  m_mme_gtpc_log->console("NB-IoT: handle_modify_bearer_response------------- Sending Service Accept.\n"); // emm 04
-  pool->print_all_buffers();
+  m_mme_gtpc_log->console("handle_modify_bearer_response: Sending Service Accept.\n"); // emm 04
+  //pool->print_all_buffers();
   srslte::byte_buffer_t* nas_tx = pool->allocate();
-  pool->print_all_buffers();
+  //pool->print_all_buffers();
   nas_ctx->pack_service_accept(nas_tx, 0x2000); // Set the EBI_5 = 1
   m_s1ap->send_downlink_nas_transport(
       nas_ctx->m_ecm_ctx.enb_ue_s1ap_id, nas_ctx->m_ecm_ctx.mme_ue_s1ap_id, nas_tx, nas_ctx->m_ecm_ctx.enb_sri);
   pool->deallocate(nas_tx);
 
-  m_mme_gtpc_log->debug("NB-IoT: handle_modify_bearer_response------------- Checking the User Pending Pkt\n");
-  m_mme_gtpc_log->console("NB-IoT: handle_modify_bearer_response------------- Checking the User Pending Pkt\n");
+  m_mme_gtpc_log->debug("handle_modify_bearer_response: Checking the User Pending Pkt\n");
+  m_mme_gtpc_log->console("handle_modify_bearer_response: Checking the User Pending Pkt\n");
   while (nas_ctx->pending_ul_pkt.size() > 0) {
-    m_mme_gtpc_log->console("NB-IoT: handle_modify_bearer_response------------- Send User Pending Pkt\n");
+    m_mme_gtpc_log->console("handle_modify_bearer_response: Send User Pending Pkt\n");
     srslte::byte_buffer_t* pdu = nas_ctx->pending_ul_pkt[0];
     // TODO: Currently the default teid = 1
-    uint32_t                                      mme_teid = 1;   // !!!!!!!!!!!!!!!!!!!is error
-    std::map<uint64_t, struct gtpc_ctx>::iterator it       = m_imsi_to_gtpc_ctx.find(imsi_it->second);
+    uint32_t mme_teid = 1;   // !!!!!!!!!!!!!!!!!!!is error
+    std::map<uint64_t, struct gtpc_ctx>::iterator it = m_imsi_to_gtpc_ctx.find(imsi_it->second);
     if (it != m_imsi_to_gtpc_ctx.end()) {
       mme_teid = it->second.mme_ctr_fteid.teid;
-      m_mme_gtpc_log->console("NB-IoT: handle_modify_bearer_response------------- Find teid=%d\n", mme_teid); // emm 04
+      m_mme_gtpc_log->console("handle_modify_bearer_response: Find teid=%d\n", mme_teid); // emm 04
     }
     m_s11u_ep->send_s11u_pdu(mme_teid, pdu);
     nas_ctx->pending_ul_pkt.pop_front();
-    pool->print_all_buffers();
+    //pool->print_all_buffers();
     pool->deallocate(pdu);
-    pool->print_all_buffers();
-    m_mme_gtpc_log->console("NB-IoT: handle_modify_bearer_response------------- Send User Pending Pkt End\n");
+    //pool->print_all_buffers();
+    m_mme_gtpc_log->console("handle_modify_bearer_response: Send User Pending Pkt End\n");
   }
 
   return;
@@ -493,7 +475,8 @@ void mme_gtpc::handle_modify_bearer_response(srslte::gtpc_pdu* mb_resp_pdu)
 bool mme_gtpc::send_delete_session_request(uint64_t imsi)
 {
   m_mme_gtpc_log->info("Sending GTP-C Delete Session Request request. IMSI %" PRIu64 "\n", imsi);
-  srslte::gtpc_pdu    del_req_pdu;
+  srslte::gtpc_pdu del_req_pdu;
+  std::memset(&del_req_pdu, 0, sizeof(del_req_pdu));
   srslte::gtp_fteid_t sgw_ctr_fteid;
   srslte::gtp_fteid_t mme_ctr_fteid;
 
@@ -522,10 +505,10 @@ bool mme_gtpc::send_delete_session_request(uint64_t imsi)
   std::map<uint32_t, uint64_t>::iterator it_imsi = m_mme_ctr_teid_to_imsi.find(mme_ctr_fteid.teid);
   if (it_imsi == m_mme_ctr_teid_to_imsi.end()) {
     m_mme_gtpc_log->error("Could not find IMSI from MME ctr TEID");
-    printf("=========send_delete_session_request========send_delete_session_request========Could not find IMSI from MME ctr TEID==========================\n");
+    m_mme_gtpc_log->console("send_delete_session_request: Could not find IMSI from MME ctr TEID\n");
   } else {
     m_mme_ctr_teid_to_imsi.erase(it_imsi);
-    printf("=======send_delete_session_request=========send_delete_session_request=========send_delete_session_request  m_mme_ctr_teid_to_imsi.erase ==========================\n");
+    m_mme_gtpc_log->console("send_delete_session_request: m_mme_ctr_teid_to_imsi.erase\n");
   }
   m_imsi_to_gtpc_ctx.erase(it_ctx);
   return true;
@@ -535,7 +518,8 @@ void mme_gtpc::send_release_access_bearers_request(uint64_t imsi)
 {
   // The GTP-C connection will not be torn down, just the user plane bearers.
   m_mme_gtpc_log->info("Sending GTP-C Release Access Bearers Request\n");
-  srslte::gtpc_pdu    rel_req_pdu;
+  srslte::gtpc_pdu rel_req_pdu;
+  std::memset(&rel_req_pdu, 0, sizeof(rel_req_pdu));
   srslte::gtp_fteid_t sgw_ctr_fteid;
 
   // Get S-GW Ctr TEID
@@ -568,7 +552,7 @@ bool mme_gtpc::handle_downlink_data_notification(srslte::gtpc_pdu* dl_not_pdu)
   std::map<uint32_t, uint64_t>::iterator   imsi_it       = m_mme_ctr_teid_to_imsi.find(mme_ctrl_teid);
   if (imsi_it == m_mme_ctr_teid_to_imsi.end()) {
     m_mme_gtpc_log->error("Could not find IMSI from control TEID\n");
-    printf("=============handle_downlink_data_notification====================Could not find IMSI from control TEID==========================\n");
+    m_mme_gtpc_log->console("Could not find IMSI from control TEID\n");
     return false;
   }
 

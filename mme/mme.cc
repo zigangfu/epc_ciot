@@ -182,12 +182,12 @@ void mme::run_thread()
       }
       // Handle S11
       if (FD_ISSET(s11, &m_set)) {
-        pdu->N_bytes = recvfrom(s11, pdu->msg, SRSLTE_MAX_BUFFER_SIZE_BYTES, 0, NULL, NULL);
+        pdu->N_bytes = recvfrom(s11, pdu->msg, sz, 0, NULL, NULL);
         m_mme_gtpc->handle_s11_pdu(pdu);
       }
       // Handle S11U
       if (FD_ISSET(s11u, &m_set)) {
-        pdu->N_bytes = recvfrom(s11u, pdu->msg, SRSLTE_MAX_BUFFER_SIZE_BYTES, 0, NULL, NULL);
+        pdu->N_bytes = recvfrom(s11u, pdu->msg, sz, 0, NULL, NULL);
         m_s11u_ep->handle_s11u_pdu(pdu);
       }
       // Handle NAS Timers

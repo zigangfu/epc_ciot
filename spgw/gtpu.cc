@@ -281,12 +281,12 @@ void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
   gtpu_fteid_it = m_ip_to_usr_teid.find(iph->daddr);
   if (gtpu_fteid_it != m_ip_to_usr_teid.end()) {
     usr_found = true;
-    printf("====================283 find teid ================\n");
+    m_gtpu_log->debug("handle_sgi_pdu: Found S1U FTeid");
     enb_fteid = gtpu_fteid_it->second;
   }
   s11u_teid_it = m_ip_to_s11u_teid.find(iph->daddr);
   if (s11u_teid_it != m_ip_to_s11u_teid.end()) {
-    printf("====================288 find teid ================\n"); // emm 05
+    m_gtpu_log->debug("handle_sgi_pdu: Found S11U FTeid");
     s11u_found = true;
     usr_found = true;
     s11u_teid = s11u_teid_it->second;
@@ -312,10 +312,8 @@ void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
     goto pkt_discard_out;
   } else {
     if (!s11u_found) {
-      printf("++++++++++++++++++++++++s11u not found+++++++++++++++++++++++\n", s11u_found);
       send_s1u_pdu(enb_fteid, msg);
     } else {
-      printf("++++++++++++++++++++++++s11u_found++++++++++++++++++++++++\n", s11u_found); // emm 05
       send_s11u_pdu(s11u_teid, msg);
     }
   }
@@ -361,15 +359,13 @@ void spgw::gtpu::send_s1u_pdu(srslte::gtp_fteid_t enb_fteid, srslte::byte_buffer
   m_gtpu_log->debug("eNB F-TEID -- eNB IP %s, eNB TEID 0x%x.\n", inet_ntoa(enb_addr.sin_addr), enb_fteid.teid);
 
   // Write header into packet
-  int n;
-
-  printf("333333333333333333333 gtpucc361 TEID %u333333333333333333\n", header.teid);
   if (!srslte::gtpu_write_header(&header, msg, m_gtpu_log)) {
     m_gtpu_log->error("Error writing GTP-U header on PDU\n");
     goto out;
   }
 
   // Send packet to destination
+  int n;
   n = sendto(m_s1u, msg->msg, msg->N_bytes, 0, (struct sockaddr*)&enb_addr, sizeof(enb_addr));
   if (n < 0) {
     m_gtpu_log->error("Error sending packet to eNB\n");
@@ -392,19 +388,17 @@ void spgw::gtpu::send_s11u_pdu(uint32_t s11u_teid, srslte::byte_buffer_t* msg)
   header.length       = msg->N_bytes;
   header.teid         = s11u_teid;
 
-  m_gtpu_log->debug("User plane tunnel found SGi PDU (CIoT). Forwarding packet to S11-U.\n");
-  m_gtpu_log->debug("MME TEID 0x%x.\n", s11u_teid);
+  m_gtpu_log->debug("User plane tunnel found SGi PDU. Forwarding packet to S11-U(TEID 0x%x).\n",
+     s11u_teid);
 
   // Write header into packet
-  int n;
-
-  printf("333333333333333333333 gtpucc396 333333333333333333\n");  // emm 05
   if (!srslte::gtpu_write_header(&header, msg, m_gtpu_log)) {
     m_gtpu_log->error("Error writing GTP-U header on PDU\n");
     goto out;
   }
 
   // Send packet to destination
+  int n;
   n = sendto(m_s11u, msg->msg, msg->N_bytes, 0, (const sockaddr*)&m_mme_addr, sizeof(m_mme_addr));
   if (n < 0) {
     m_gtpu_log->error("Error sending packet to MME (S11-U)\n");
@@ -413,7 +407,7 @@ void spgw::gtpu::send_s11u_pdu(uint32_t s11u_teid, srslte::byte_buffer_t* msg)
   }
 
 out:
-  m_gtpu_log->debug("Deallocating packet after sending S11-U message\n");
+  //m_gtpu_log->debug("Deallocating packet after sending S11-U message\n");
   m_pool->deallocate(msg);
   return;
 }
@@ -426,7 +420,6 @@ void spgw::gtpu::send_all_queued_packets(srslte::gtp_fteid_t                 dw_
   while (!pkt_queue.empty()) {
     srslte::byte_buffer_t* msg = pkt_queue.front();
     if (!s11u) {
-      printf("++++++++++++++++++++++++send_all_queued_packets++++++++++++++++++++++++\n");
       send_s1u_pdu(dw_user_fteid, msg);
     } else {
       send_s11u_pdu(dw_user_fteid.teid, msg);
@@ -444,13 +437,13 @@ bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srslte::gtpc_f_teid_ie dw
   m_gtpu_log->info("Modifying GTP-U Tunnel.\n");
   m_gtpu_log->info("UE IP %s\n", srslte::gtpu_ntoa(ue_ipv4).c_str());
   if (!s11u) {
-    m_gtpu_log->info(
-        "Downlink eNB addr %s, U-TEID 0x%x\n", srslte::gtpu_ntoa(dw_user_fteid.ipv4).c_str(), dw_user_fteid.teid);
-    printf("==================m_ip_to_usr_teid insert teid %u===============================\n", dw_user_fteid.teid);
+    m_gtpu_log->info("Downlink eNB addr %s, S1-U-TEID 0x%x\n",
+      srslte::gtpu_ntoa(dw_user_fteid.ipv4).c_str(), dw_user_fteid.teid);
     m_ip_to_usr_teid[ue_ipv4] = dw_user_fteid;
+    // ciot up: use s1u, erase s11u
+    m_ip_to_s11u_teid.erase(ue_ipv4);
   } else {
-    m_gtpu_log->info("Downlink MME (S11-U) TEID 0x%x\n", dw_user_fteid.teid);
-    printf("==================m_ip_to_s11u_teid insert teid %u===========up_ctrl_teid %u====================\n", dw_user_fteid.teid, up_ctrl_teid);  // emm 03
+    m_gtpu_log->info("Downlink MME(S11-U) TEID 0x%x\n", dw_user_fteid.teid);
     m_ip_to_s11u_teid[ue_ipv4] = up_ctrl_teid;
   }
   m_gtpu_log->info("Uplink C-TEID: 0x%x\n", up_ctrl_teid);
@@ -460,11 +453,17 @@ bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srslte::gtpc_f_teid_ie dw
 
 bool spgw::gtpu::delete_gtpu_tunnel(in_addr_t ue_ipv4)
 {
+  bool deleted = false;
   // Remove GTP-U connections, if any.
   if (m_ip_to_usr_teid.count(ue_ipv4)) {
     m_ip_to_usr_teid.erase(ue_ipv4);
+    deleted = true;
+  }
+  if (m_ip_to_s11u_teid.count(ue_ipv4)) {
     m_ip_to_s11u_teid.erase(ue_ipv4);
-  } else {
+    deleted = true;
+  }
+  if (!deleted) {
     m_gtpu_log->error("Could not find GTP-U Tunnel to delete.\n");
     return false;
   }

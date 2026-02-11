@@ -575,6 +575,20 @@ bool nas::handle_guti_attach_request_known_ue(nas*                              
                    emm_ctx->imsi,
                    ecm_ctx->enb_ue_s1ap_id,
                    ecm_ctx->mme_ue_s1ap_id);
+  nas_log->info("Found UE context. IMSI: %015" PRIu64 ", old eNB UE S1ap Id %d, old MME UE S1AP Id %d\n",
+                   emm_ctx->imsi,
+                   ecm_ctx->enb_ue_s1ap_id,
+                   ecm_ctx->mme_ue_s1ap_id);
+
+  // Save UE network capabilities
+  memcpy(
+      &sec_ctx->ue_network_cap, &attach_req.ue_network_cap, sizeof(LIBLTE_MME_UE_NETWORK_CAPABILITY_STRUCT));
+  sec_ctx->ms_network_cap_present = attach_req.ms_network_cap_present;
+  if (attach_req.ms_network_cap_present) {
+    memcpy(&sec_ctx->ms_network_cap,
+           &attach_req.ms_network_cap,
+           sizeof(LIBLTE_MME_MS_NETWORK_CAPABILITY_STRUCT));
+  }
 
   // Check NAS integrity
   msg_valid = nas_ctx->integrity_check(nas_rx);
@@ -629,7 +643,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*                              
       hss->gen_update_loc_answer(emm_ctx->imsi, &nas_ctx->m_esm_ctx[default_bearer].qci);
       nas_log->debug("Getting subscription information -- QCI %d\n", nas_ctx->m_esm_ctx[default_bearer].qci);
       nas_log->console("Getting subscription information -- QCI %d\n", nas_ctx->m_esm_ctx[default_bearer].qci);
-      gtpc->send_create_session_request(emm_ctx->imsi);
+      gtpc->send_create_session_request(emm_ctx->imsi, nas_ctx->use_cp_ciot());
     }
     sec_ctx->ul_nas_count++;
     pool->deallocate(nas_tx);
@@ -693,7 +707,7 @@ bool nas::handle_guti_attach_request_known_ue(nas*                              
 
     // Restarting security context. Reseting eKSI to 0.
     sec_ctx->eksi = 0;
-    nas_tx        = pool->allocate();
+    nas_tx = pool->allocate();
     nas_ctx->pack_authentication_request(nas_tx);
 
     // Send reply to eNB
@@ -864,10 +878,10 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
                                  const nas_if_t&         itf,
                                  srslte::log*            nas_log)
 {
-  nas_log->info("NB-IoT: -------------------- Control Plane Service request -- S-TMSI 0x%x\n", m_tmsi);
-  nas_log->console("NB-IoT: -------------------- Control Plane Service request -- S-TMSI 0x%x\n", m_tmsi);
-  nas_log->info("NB-IoT: -------------------- Control Plane Service request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
-  nas_log->console("NB-IoT: -------------------- Control Plane Service request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
+  nas_log->info("CIoT Control Plane Service request -- S-TMSI 0x%x\n", m_tmsi);
+  nas_log->console("CIoT Control Plane Service request -- S-TMSI 0x%x\n", m_tmsi);
+  nas_log->info("CIoT Control Plane Service request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
+  nas_log->console("CIoT Control Plane Service request -- eNB UE S1AP Id %d\n", enb_ue_s1ap_id);
 
   bool                                  mac_valid = false;
   LIBLTE_MME_CONTROL_PLANE_SERVICE_REQUEST_MSG_STRUCT cp_service_req;
@@ -881,24 +895,26 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
 
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_nb_control_plane_service_request_msg((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &cp_service_req);
   if (err != LIBLTE_SUCCESS) {
-    nas_log->error("NB-IoT: handle_nb_control_plane_service_request-------------------- Could not unpack service request\n");
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Could not unpack service request\n");
+    nas_log->error("CIoT Control Plane Service request: Could not unpack service request\n");
+    nas_log->console("CIoT Control Plane Service request: Could not unpack service request\n");
     return false;
   }else{
-    nas_log->console("NB-IoT NAS: handle_nb_control_plane_service_request-------------------- Successfully unpack service request\n");  // emm 02
-    nas_log->console("NB-IoT NAS: handle_nb_control_plane_service_request-------------------- Ciphered User Data Length=%d\n", cp_service_req.esm_msg.N_bytes);
-    printf("NB-IoT NAS: handle_nb_control_plane_service_request------------Ciphered User Data Start\n");
+    nas_log->debug("CIoT Control Plane Service request: Successfully unpack msg, esm_msg len(%d)\n",
+      cp_service_req.esm_msg.N_bytes);  // emm 02
+    nas_log->console("CIoT Control Plane Service request: Successfully unpack msg, esm_msg len(%d)\n",
+      cp_service_req.esm_msg.N_bytes);  // emm 02
+    /*nas_log->console("CIoT Control Plane Service request: Ciphered User Data:\n");
     for(uint32_t i =0; i<cp_service_req.esm_msg.N_bytes; i++){
-      printf("0x%x ", cp_service_req.esm_msg.msg[i]);
+      nas_log->console("0x%x ", cp_service_req.esm_msg.msg[i]);
     }
-    printf("\nNB-IoT NAS: handle_nb_control_plane_service_request---------Ciphered User Data End\n");
+    nas_log->console("\n");*/
   }
 
   uint64_t imsi = s1ap->find_imsi_from_m_tmsi(m_tmsi);
 
   if (imsi == 0) {
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request--------------------  Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
-    nas_log->error("NB-IoT: handle_nb_control_plane_service_request-------------------- Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
+    nas_log->error("CIoT Control Plane Service request: Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
+    nas_log->console("CIoT Control Plane Service request: Could not find IMSI from M-TMSI. M-TMSI 0x%x\n", m_tmsi);
     nas nas_tmp(args, itf, nas_log);
     nas_tmp.m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
     nas_tmp.m_ecm_ctx.mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
@@ -912,8 +928,8 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
 
   nas* nas_ctx = s1ap->find_nas_ctx_from_imsi(imsi);
   if (nas_ctx == NULL || nas_ctx->m_emm_ctx.state != EMM_STATE_REGISTERED) {
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- UE is not EMM-Registered.\n");
-    nas_log->error("NB-IoT: handle_nb_control_plane_service_request-------------------- UE is not EMM-Registered.\n");
+    nas_log->error("CIoT Control Plane Service request: UE is not EMM-Registered.\n");
+    nas_log->console("CIoT Control Plane Service request: UE is not EMM-Registered.\n");
     nas nas_tmp(args, itf, nas_log);
     nas_tmp.m_ecm_ctx.enb_ue_s1ap_id = enb_ue_s1ap_id;
     nas_tmp.m_ecm_ctx.mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
@@ -938,21 +954,23 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
   LIBLTE_MME_NB_ESM_MSG_STRUCT nb_esm_msg;
   err = liblte_mme_unpack_nb_esm_message_container_ie(&esm_msg_ptr, &nb_esm_msg);
   if (err != LIBLTE_SUCCESS) {
-    nas_log->error("NB-IoT: handle_nb_control_plane_service_request-------------------- Could not unpack nb_esm_msg\n");
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Could not unpack nb_esm_msg\n");
+    nas_log->error("CIoT Control Plane Service request: Could not unpack nb_esm_msg\n");
+    nas_log->console("CIoT Control Plane Service request: Could not unpack nb_esm_msg\n");
     return false;
   }else{
-    nas_log->console("NB-IoT NAS: handle_nb_control_plane_service_request-------------------- Successfully unpack nb_esm_msg\n");   // emm 02
-    nas_log->console("NB-IoT NAS: handle_nb_control_plane_service_request-------------------- Plain User Data Length=%d\n", nb_esm_msg.user_data.N_bytes);
-    printf("NB-IoT NAS: handle_nb_control_plane_service_request------------Plain User Data Start\n");
+    nas_log->debug("CIoT Control Plane Service request: unpacked nb_esm_msg, plain User Data Length=%d\n",
+      nb_esm_msg.user_data.N_bytes);
+    nas_log->console("CIoT Control Plane Service request: unpacked nb_esm_msg, plain User Data Length=%d\n",
+      nb_esm_msg.user_data.N_bytes);
+    /*nas_log->console("CIoT Control Plane Service request: Plain User Data:\n");
     for(uint32_t i =0; i<nb_esm_msg.user_data.N_bytes; i++){
-      printf("0x%x ", nb_esm_msg.user_data.msg[i]);
+      nas_log->console("0x%x ", nb_esm_msg.user_data.msg[i]);
     }
-    printf("\nNB-IoT NAS: handle_nb_control_plane_service_request---------Plain User Data End\n");
+    nas_log->console("\n");*/
   }
 
-  nas_log->debug("NB-IoT: handle_nb_control_plane_service_request-------------------- Send the user data through S11U\n");
-  nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Send the user data through S11U\n");
+  nas_log->debug("CIoT Control Plane Service request: Send the user data through S11U\n");
+  nas_log->console("CIoT Control Plane Service request: Send the user data through S11U\n");
   srslte::byte_buffer_t* pdu = pool->allocate();
   memcpy(pdu->msg, nb_esm_msg.user_data.msg, nb_esm_msg.user_data.N_bytes);
   pdu->N_bytes = nb_esm_msg.user_data.N_bytes;
@@ -963,23 +981,23 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
 
   // TODO: tmp hack
   if(!mac_valid){
-    nas_log->error("Error: NB-IoT: handle_nb_control_plane_service_request-------------------- Invalid MAC !!!\n");
-    nas_log->console("Error: NB-IoT: handle_nb_control_plane_service_request-------------------- Invalid MAC !!!\n");
+    nas_log->error("CIoT Control Plane Service request: Invalid MAC !!!\n");
+    nas_log->console("CIoT Control Plane Service request: Invalid MAC !!!\n");
     mac_valid = true;
   }
 
   if (mac_valid) {
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Service Request -- MAC valid\n");
-    nas_log->info("NB-IoT: handle_nb_control_plane_service_request-------------------- Service Request -- MAC valid\n");
+    nas_log->info("CIoT Control Plane Service request: MAC valid\n");
+    nas_log->console("CIoT Control Plane Service request: MAC valid\n");
     if (ecm_ctx->state == ECM_STATE_CONNECTED) {
-      nas_log->error("Service Request -- User is ECM CONNECTED\n");
-      nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Service Request -- User is ECM CONNECTED\n");
+      nas_log->error("CIoT Control Plane Service request: User is ECM CONNECTED\n");
+      nas_log->console("CIoT Control Plane Service request: User is ECM CONNECTED\n");
 
       // Release previous context
-      nas_log->info("Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
+      nas_log->info("CIoT Control Plane Service request: Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
                     ecm_ctx->enb_ue_s1ap_id,
                     ecm_ctx->mme_ue_s1ap_id);
-      nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
+      nas_log->console("CIoT Control Plane Service request: Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
                     ecm_ctx->enb_ue_s1ap_id,
                     ecm_ctx->mme_ue_s1ap_id);
       s1ap->send_ue_context_release_command(ecm_ctx->mme_ue_s1ap_id);
@@ -989,13 +1007,13 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
     ecm_ctx->enb_ue_s1ap_id = enb_ue_s1ap_id;
 
     // UE not connect. Connect normally.
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request--------------------Service Request -- User is ECM DISCONNECTED\n");
-    nas_log->info("NB-IoT: handle_nb_control_plane_service_request--------------------Service Request -- User is ECM DISCONNECTED\n");
+    nas_log->info("CIoT Control Plane Service request: User is ECM DISCONNECTED\n");
+    nas_log->console("CIoT Control Plane Service request: User is ECM DISCONNECTED\n");
 
     // Create ECM context
     ecm_ctx->mme_ue_s1ap_id = s1ap->get_next_mme_ue_s1ap_id();
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request--------------------Generate new s1ap_id=%d\n",ecm_ctx->mme_ue_s1ap_id);   // emm 02
-    nas_log->info("NB-IoT: handle_nb_control_plane_service_request--------------------Generate new s1ap_id=%d\n",ecm_ctx->mme_ue_s1ap_id);
+    nas_log->info("CIoT Control Plane Service request: Generate new s1ap_id=%d\n",ecm_ctx->mme_ue_s1ap_id);
+    nas_log->console("CIoT Control Plane Service request: Generate new s1ap_id=%d\n",ecm_ctx->mme_ue_s1ap_id);   // emm 02
 
     // Set eNB information
     ecm_ctx->enb_ue_s1ap_id = enb_ue_s1ap_id;
@@ -1029,6 +1047,8 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
 
     // TODO: NB-IoT: Double check- NB-IoT should send the modify_bearer_request after receiving the cp_service_request
     if (emm_ctx->state == EMM_STATE_REGISTERED) {
+      nas_log->info("Initial Context Setup Response triggered from Service Request.\n");
+      nas_log->info("Sending Modify Bearer Request.\n");
       nas_log->console("Initial Context Setup Response triggered from Service Request.\n");
       nas_log->console("Sending Modify Bearer Request.\n");
       gtpc->send_modify_bearer_request(emm_ctx->imsi, 5, &nas_ctx->m_esm_ctx[5].enb_fteid);     // emm 02 maybe
@@ -1037,18 +1057,17 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
     sec_ctx->ul_nas_count++;
 
 //    // Send Service Accept to UE
-//    nas_log->console("NB-IoT: handle_nb_control_plane_service_request------------- Sending Service Accept.\n");
+//    nas_log->console("CIoT Control Plane Service request: Sending Service Accept.\n");
 //    srslte::byte_buffer_t* nas_tx = pool->allocate();
 //    nas_ctx->pack_service_accept(nas_tx, 0x2000); // Set the EBI_5 = 1
 //    s1ap->send_downlink_nas_transport(enb_ue_s1ap_id, nas_ctx->m_ecm_ctx.mme_ue_s1ap_id, nas_tx, *enb_sri);
 //    pool->deallocate(nas_tx);
 
   } else {
-    nas_log->console("NB-IoT: handle_nb_control_plane_service_request-------------------- Service Request -- Short MAC invalid\n");
-    nas_log->info("NB-IoT: handle_nb_control_plane_service_request-------------------- Service Request -- Short MAC invalid\n");
+    nas_log->info("CIoT Control Plane Service request: Short MAC invalid\n");
+    nas_log->console("CIoT Control Plane Service request: Short MAC invalid\n");
     if (ecm_ctx->state == ECM_STATE_CONNECTED) {
       nas_log->error("Service Request -- User is ECM CONNECTED\n");
-
       // Release previous context
       nas_log->info("Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
                     ecm_ctx->enb_ue_s1ap_id,
@@ -1069,9 +1088,10 @@ bool nas::handle_nb_control_plane_service_request(uint32_t                m_tmsi
     s1ap->send_downlink_nas_transport(ecm_ctx->enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id, nas_tx, *enb_sri);
     pool->deallocate(nas_tx);
 
-    nas_log->console("Service Request -- Short MAC invalid. Sending service reject.\n");
-    nas_log->warning("Service Request -- Short MAC invalid. Sending service reject.\n");
+    nas_log->warning("CIoT Control Plane Service request: Short MAC invalid. Sending service reject.\n");
+    nas_log->console("CIoT Control Plane Service request: Short MAC invalid. Sending service reject.\n");
     nas_log->info("Service Reject -- eNB_UE_S1AP_ID %d MME_UE_S1AP_ID %d.\n", enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id);
+    nas_log->console("Service Reject -- eNB_UE_S1AP_ID %d MME_UE_S1AP_ID %d.\n", enb_ue_s1ap_id, ecm_ctx->mme_ue_s1ap_id);
   }
   return true;
 }
@@ -1124,8 +1144,8 @@ void nas::cipher_decrypt_esm_msg(LIBLTE_BYTE_MSG_STRUCT* esm_msg, uint8_t count)
 // Service Requests
 bool nas::handle_esm_data_transport(srslte::byte_buffer_t*  nas_rx)
 {
-  m_nas_log->info("NB-IoT: -------------------- Control Plane Service request -- IMSI 0x%lx\n", m_emm_ctx.imsi);
-  m_nas_log->console("NB-IoT: -------------------- Control Plane Service request -- IMSI 0x%lx\n", m_emm_ctx.imsi);
+  m_nas_log->info("handle_esm_data_transport: IMSI 0x%lx\n", m_emm_ctx.imsi);
+  m_nas_log->console("handle_esm_data_transport: IMSI 0x%lx\n", m_emm_ctx.imsi);
 
   bool                                  mac_valid = false;
   LIBLTE_MME_NB_ESM_MSG_STRUCT          esm_msg;
@@ -1133,17 +1153,17 @@ bool nas::handle_esm_data_transport(srslte::byte_buffer_t*  nas_rx)
 
   LIBLTE_ERROR_ENUM err = liblte_mme_unpack_esm_data_transport((LIBLTE_BYTE_MSG_STRUCT*)nas_rx, &esm_msg);
   if (err != LIBLTE_SUCCESS) {
-    m_nas_log->error("NB-IoT: handle_esm_data_transport-------------------- Could not unpack service request\n");
-    m_nas_log->console("NB-IoT: handle_esm_data_transport-------------------- Could not unpack service request\n");
+    m_nas_log->error("handle_esm_data_transport: Could not unpack service request\n");
+    m_nas_log->console("handle_esm_data_transport: Could not unpack service request\n");
     return false;
   } else {
-    m_nas_log->console("NB-IoT NAS: handle_esm_data_transport-------------------- Successfully unpack service request\n");
-    m_nas_log->console("NB-IoT NAS: handle_esm_data_transport-------------------- Ciphered User Data Length=%d\n", esm_msg.user_data.N_bytes);
-    printf("NB-IoT NAS: handle_esm_data_transport------------Ciphered User Data Start\n");
+    m_nas_log->debug("handle_esm_data_transport: Ciphered User Data Length=%d\n", esm_msg.user_data.N_bytes);
+    //m_nas_log->console("handle_esm_data_transport: Ciphered User Data Length=%d\n", esm_msg.user_data.N_bytes);
+    /*m_nas_log->debug("handle_esm_data_transport: Ciphered User Data:\n");
     for(uint32_t i =0; i<esm_msg.user_data.N_bytes; i++){
-      printf("0x%x ", esm_msg.user_data.msg[i]);
+      m_nas_log->debug("0x%x ", esm_msg.user_data.msg[i]);
     }
-    printf("\nNB-IoT NAS: handle_esm_data_transport---------Ciphered User Data End\n");
+    m_nas_log->debug("\n");*/
   }
 
   // XXX: directly do it in NAS?
@@ -1160,7 +1180,8 @@ bool nas::handle_esm_data_transport(srslte::byte_buffer_t*  nas_rx)
 
   m_gtpc->send_s11u_pdu(teid, pdu);
   pool->deallocate(pdu);
-  m_nas_log->info("NB-IoT: handle_esm_data_transport-------------------- Finish sending\n");
+  m_nas_log->debug("handle_esm_data_transport: user_data sended, bytes(%d)\n",
+    esm_msg.user_data.N_bytes);
 
   return true;
 }
@@ -1461,7 +1482,7 @@ bool nas::handle_security_mode_complete(srslte::byte_buffer_t* nas_rx)
     m_hss->gen_update_loc_answer(m_emm_ctx.imsi, &m_esm_ctx[default_bearer].qci);
     m_nas_log->debug("Getting subscription information -- QCI %d\n", m_esm_ctx[default_bearer].qci);
     m_nas_log->console("Getting subscription information -- QCI %d\n", m_esm_ctx[default_bearer].qci);
-    m_gtpc->send_create_session_request(m_emm_ctx.imsi);
+    m_gtpc->send_create_session_request(m_emm_ctx.imsi, nas::use_cp_ciot());
   }
   m_pool->deallocate(nas_tx);
   return true;
@@ -1497,27 +1518,26 @@ bool nas::handle_attach_complete(srslte::byte_buffer_t* nas_rx)
   }
   if (m_emm_ctx.state == EMM_STATE_DEREGISTERED) {
     // Attach requested from attach request
-    // TODO: NB-IoT: send_modify_bearer_request after receiving control plane service request
-//    m_gtpc->send_modify_bearer_request(
-//        m_emm_ctx.imsi, act_bearer.eps_bearer_id, &m_esm_ctx[act_bearer.eps_bearer_id].enb_fteid);
+    m_gtpc->send_modify_bearer_request(
+        m_emm_ctx.imsi, act_bearer.eps_bearer_id, &m_esm_ctx[act_bearer.eps_bearer_id].enb_fteid);
 
     // Send reply to EMM Info to UE
     nas_tx = m_pool->allocate();
     pack_emm_information(nas_tx);
 
     m_s1ap->send_downlink_nas_transport(m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, nas_tx, m_ecm_ctx.enb_sri);
-    m_pool->print_all_buffers();
+    //m_pool->print_all_buffers();
     m_pool->deallocate(nas_tx);
-    m_pool->print_all_buffers();
+    //m_pool->print_all_buffers();
 
     m_nas_log->console("Sending EMM Information\n");
     m_nas_log->info("Sending EMM Information\n");
   }
 
   // TODO: NB-IoT: Perform the RRCConnectionRelease after EMM information 
-  m_nas_log->info("Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
-                m_ecm_ctx.enb_ue_s1ap_id,
-                  m_ecm_ctx.mme_ue_s1ap_id);
+  //m_nas_log->info("Service Request -- Releasing previouse ECM context. eNB S1AP Id %d, MME UE S1AP Id %d\n",
+  //              m_ecm_ctx.enb_ue_s1ap_id,
+  //                m_ecm_ctx.mme_ue_s1ap_id);
   // m_s1ap->send_ue_context_release_command(m_ecm_ctx.mme_ue_s1ap_id);
   // m_s1ap->release_ue_ecm_ctx(m_ecm_ctx.mme_ue_s1ap_id);
 
@@ -1555,7 +1575,7 @@ bool nas::handle_esm_information_response(srslte::byte_buffer_t* nas_rx)
 
   //  // OLD: TODO The packging of GTP-C messages is not ready.
   //  // This means that GTP-U tunnels are created with function calls, as opposed to GTP-C.
-  m_gtpc->send_create_session_request(m_emm_ctx.imsi, true);
+  m_gtpc->send_create_session_request(m_emm_ctx.imsi, nas::use_cp_ciot());
 
   // TODO: NB-IoT do not need to send Initial Context Setup Request
   // TODO: Move the accept to session_request_response?
@@ -1567,8 +1587,8 @@ bool nas::handle_esm_information_response(srslte::byte_buffer_t* nas_rx)
 //  m_s1ap->send_downlink_nas_transport(m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, nas_tx, m_ecm_ctx.enb_sri);
 //  m_pool->deallocate(nas_tx);
 //
-//  m_nas_log->console("NB-IoT: --------------------------- Sending Attach Accept\n");
-//  m_nas_log->info("NB-IoT: --------------------------- Sending Attach Accept\n");
+//  m_nas_log->info("CIoT: Sending Attach Accept\n");
+//  m_nas_log->console("CIoT: Sending Attach Accept\n");
 
   return true;
 }
@@ -1725,6 +1745,12 @@ bool nas::handle_detach_request(srslte::byte_buffer_t* nas_msg)
 
   m_gtpc->send_delete_session_request(m_emm_ctx.imsi);
   m_emm_ctx.state = EMM_STATE_DEREGISTERED;
+
+  // Mark E-RABs as de-activated
+  for (esm_ctx_t& esm_ctx : m_esm_ctx) {
+    esm_ctx.state = ERAB_DEACTIVATED;
+  }
+
   if (m_ecm_ctx.mme_ue_s1ap_id != 0) {
     m_s1ap->send_ue_context_release_command(m_ecm_ctx.mme_ue_s1ap_id);
   }
@@ -1854,7 +1880,7 @@ bool nas::pack_esm_information_request(srslte::byte_buffer_t* nas_buffer)
 bool nas::pack_attach_accept(srslte::byte_buffer_t* nas_buffer)
 {
   m_nas_log->info("Packing Attach Accept\n");
-  m_nas_log->console("NB-IoT NAS: ------------------------------ Packing Attach Accept\n");
+  m_nas_log->console("Packing Attach Accept\n");
 
   LIBLTE_MME_ATTACH_ACCEPT_MSG_STRUCT                               attach_accept;
   LIBLTE_MME_ACTIVATE_DEFAULT_EPS_BEARER_CONTEXT_REQUEST_MSG_STRUCT act_def_eps_bearer_context_req;
@@ -1969,7 +1995,9 @@ bool nas::pack_attach_accept(srslte::byte_buffer_t* nas_buffer)
   act_def_eps_bearer_context_req.connectivity_type_present = false;
 
   // For NB-IoT, enable the ctrl_plane_only_ind_present
-  act_def_eps_bearer_context_req.ctrl_plane_only_ind_present = true;
+  if (use_cp_ciot()) {
+    act_def_eps_bearer_context_req.ctrl_plane_only_ind_present = true;
+  }
 
   uint8_t sec_hdr_type = 2;
   m_sec_ctx.dl_nas_count++;
@@ -2022,6 +2050,21 @@ bool nas::pack_emm_information(srslte::byte_buffer_t* nas_buffer)
   emm_info.utc_and_local_time_zone_present = false;
   emm_info.net_dst_present                 = false;
 
+  time_t    now;
+  struct tm broken_down_time;
+  if ((time(&now) != -1) && (gmtime_r(&now, &broken_down_time) != NULL)) {
+    emm_info.utc_and_local_time_zone.year    = broken_down_time.tm_year + 1900;
+    emm_info.utc_and_local_time_zone.month   = broken_down_time.tm_mon + 1;
+    emm_info.utc_and_local_time_zone.day     = broken_down_time.tm_mday;
+    emm_info.utc_and_local_time_zone.hour    = broken_down_time.tm_hour;
+    emm_info.utc_and_local_time_zone.minute  = broken_down_time.tm_min;
+    emm_info.utc_and_local_time_zone.second  = broken_down_time.tm_sec;
+    emm_info.utc_and_local_time_zone.tz      = 0;
+    emm_info.utc_and_local_time_zone_present = true;
+  } else {
+    m_nas_log->error("Error getting current time: %s\n", strerror(errno));
+  }
+
   uint8_t sec_hdr_type = LIBLTE_MME_SECURITY_HDR_TYPE_INTEGRITY_AND_CIPHERED;
   m_sec_ctx.dl_nas_count++;
   LIBLTE_ERROR_ENUM err = liblte_mme_pack_emm_information_msg(
@@ -2072,13 +2115,9 @@ bool nas::send_esm_data_transport(srslte::byte_buffer_t* user_data)
     return false;
   }
 
-  printf("NB-IoT: s11u_ep::send_esm_data_transport------------------------------ Packed esm data transport: Size %d\n", nas_tx->N_bytes);
-  for (uint32_t i = 0; i < nas_tx->N_bytes;) {
-    for (uint32_t j = 0; j < 16 && i < nas_tx->N_bytes; i++, j++) {
-      printf("%02x ", nas_tx->msg[i]);
-    }
-    printf("\n");
-  }
+  m_nas_log->debug("send_esm_data_transport: Packed esm data size:%d\n", nas_tx->N_bytes);
+  // hex size <= preallocated_log_str_size(1024) - 64 * 3
+  m_nas_log->debug_hex(nas_tx->msg, nas_tx->N_bytes, "Packed esm data: ");
 
   // Encrypt NAS message
   cipher_encrypt(nas_tx);
@@ -2088,7 +2127,7 @@ bool nas::send_esm_data_transport(srslte::byte_buffer_t* user_data)
   integrity_generate(nas_tx, mac);
   memcpy(&nas_tx->msg[1], mac, 4);
 
-  m_nas_log->info("Packed UE EMM information\n");
+  m_nas_log->debug("Packed UE EMM information\n");
 
   m_s1ap->send_downlink_nas_transport(
       m_ecm_ctx.enb_ue_s1ap_id, m_ecm_ctx.mme_ue_s1ap_id, nas_tx, m_ecm_ctx.enb_sri);
@@ -2100,8 +2139,8 @@ bool nas::send_esm_data_transport(srslte::byte_buffer_t* user_data)
 
 bool nas::pack_service_accept(srslte::byte_buffer_t* nas_buffer, uint16_t ebi_info)
 {
-  m_nas_log->info("NAS NB-IoT: -------------------- Packing Service Accept\n");
-  m_nas_log->console("NAS NB-IoT: -------------------- Packing Service Accept\n");
+  m_nas_log->info("CIoT nas: Packing Service Accept\n");
+  m_nas_log->console("CIoT nas: Packing Service Accept\n");
 
   LIBLTE_MME_SERVICE_ACCEPT_MSG_STRUCT service_accept;
   service_accept.eps_bearer_context_status_present = true;
@@ -2113,8 +2152,8 @@ bool nas::pack_service_accept(srslte::byte_buffer_t* nas_buffer, uint16_t ebi_in
   LIBLTE_ERROR_ENUM err = liblte_mme_pack_service_accept_msg(
       &service_accept, sec_hdr_type, m_sec_ctx.dl_nas_count, (LIBLTE_BYTE_MSG_STRUCT*)nas_buffer);
   if (err != LIBLTE_SUCCESS) {
-    m_nas_log->error("NAS NB-IoT: -------------------- Error packing Service Accept\n");
-    m_nas_log->console("NAS NB-IoT: -------------------- Error packing Service Accept\n");
+    m_nas_log->error("CIoT nas: Error packing Service Accept\n");
+    m_nas_log->console("CIoT nas: Error packing Service Accept\n");
     return false;
   }
 
@@ -2126,8 +2165,8 @@ bool nas::pack_service_accept(srslte::byte_buffer_t* nas_buffer, uint16_t ebi_in
   integrity_generate(nas_buffer, mac);
   memcpy(&nas_buffer->msg[1], mac, 4);
 
-  m_nas_log->info("NAS NB-IoT: -------------------- Packed Service Accept\n");
-  m_nas_log->console("NAS NB-IoT: -------------------- Packed Service Accept\n");
+  m_nas_log->info("CIoT nas: Packed Service Accept\n");
+  m_nas_log->console("CIoT nas: Packed Service Accept\n");
   return true;
 }
 
@@ -2514,6 +2553,20 @@ bool nas::expire_t3413()
   m_gtpc->send_downlink_data_notification_failure_indication(m_emm_ctx.imsi,
                                                              srslte::GTPC_CAUSE_VALUE_UE_NOT_RESPONDING);
   return true;
+}
+
+bool nas::use_cp_ciot()
+{
+  m_nas_log->debug("use_cp_ciot: s1u_data=%d, upciot=%d, cpciot=%d.\n",
+                   m_sec_ctx.ue_network_cap.s1udata,
+                   m_sec_ctx.ue_network_cap.upciot,
+                   m_sec_ctx.ue_network_cap.cpciot);
+  if (m_sec_ctx.ue_network_cap.cpciot &&
+      !(m_sec_ctx.ue_network_cap.upciot 
+        && m_sec_ctx.ue_network_cap.s1udata)) {
+    return true;
+  }
+  return false;
 }
 
 } // namespace srsepc

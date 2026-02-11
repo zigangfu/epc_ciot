@@ -90,6 +90,10 @@ int s1ap::init(s1ap_args_t s1ap_args, srslte::log_filter* nas_log, srslte::log_f
   m_mme_gtpc = mme_gtpc::get_instance();
   // Initialize S1-MME
   m_s1mme = enb_listen();
+  if (m_s1mme == -1) {
+    m_s1ap_log->error("Error Initializing S1AP\n");
+    return -1;
+  }
 
   // Init PCAP
   m_pcap_enable = s1ap_args.pcap_enable;
@@ -559,13 +563,8 @@ uint32_t s1ap::allocate_m_tmsi(uint64_t imsi)
   m_next_m_tmsi   = (m_next_m_tmsi + 1) % UINT32_MAX;
 
   m_tmsi_to_imsi.insert(std::pair<uint32_t, uint64_t>(m_tmsi, imsi));
-  printf("\n");
-  printf("\n");
-  printf("\n");
-  printf("Allocated M-TMSI 0x%x to IMSI %015" PRIu64 ",\n", m_tmsi, imsi);
-  printf("\n");
-  printf("\n");
-  printf("\n");
+  m_s1ap_log->info("Allocated M-TMSI 0x%x to IMSI %015" PRIu64 ",\n", m_tmsi, imsi);
+  m_s1ap_log->console("Allocated M-TMSI 0x%x to IMSI %015" PRIu64 ",\n", m_tmsi, imsi);
   return m_tmsi;
 }
 

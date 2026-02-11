@@ -160,7 +160,6 @@ void spgw::run_thread()
          */
         m_spgw_log->debug("Message received at SPGW: SGi Message\n");
         sgi_msg          = m_pool->allocate("spgw::run_thread::sgi_msg");
-        printf("++++++++++++++ spgw m_gtpu handle_sgi_pdu++++++++++++++\n");
         sgi_msg->N_bytes = read(sgi, sgi_msg->msg, buf_len);
         m_gtpu->handle_sgi_pdu(sgi_msg);
       }

@@ -50,6 +50,7 @@ int s11u_ep::init(srslte::log_ref logger_)
   // Open Socket
   m_s11u = socket(AF_UNIX, SOCK_DGRAM, 0);
   if (m_s11u < 0) {
+    m_log->error("Error opening UNIX socket. Error %s\n", strerror(errno));
     m_log->console("Error opening UNIX socket. Error %s\n", strerror(errno));
     return SRSLTE_ERROR_CANT_START;
   }
@@ -71,6 +72,7 @@ int s11u_ep::init(srslte::log_ref logger_)
 
   // Bind socket to address
   if (bind(m_s11u, (const struct sockaddr*)&m_mme_addr, sizeof(m_mme_addr)) == -1) {
+    m_log->error("Error binding UNIX socket. Error %s\n", strerror(errno));
     m_log->console("Error binding UNIX socket. Error %s\n", strerror(errno));
     return SRSLTE_ERROR_CANT_START;
   }
@@ -79,32 +81,32 @@ int s11u_ep::init(srslte::log_ref logger_)
 
 void s11u_ep::send_s11u_pdu(uint32_t mme_teid, srslte::byte_buffer_t* msg)
 {
+#if 0
   for (uint32_t i = 0; i < msg->N_bytes;) {
     for (uint32_t j = 0; j < 16 && i < msg->N_bytes; i++, j++) {
-      printf("%02x ", msg->msg[i]);
+      m_log->debug("%02x ", msg->msg[i]);
     }
-    printf("\n");
+    m_log->debug("\n");
   }
-  printf("NB-IoT: s11u_ep::send_s11u_pdu---------- Packet End\n");
-
+#endif
   // Check valid IP version
   struct iphdr* ip_pkt = (struct iphdr*)msg->msg;
 
   if (ip_pkt->version != 4 && ip_pkt->version != 6) {
-    m_log->console("Invalid IP version to SPGW\n");
-    m_log->console("Invalid IP version to SPGW\n");
+    m_log->debug("Invalid IP version to SPGW\n");
+    //m_log->console("Invalid IP version to SPGW\n");
     return;
   } else if (ip_pkt->version == 4) {
     if (ntohs(ip_pkt->tot_len) != msg->N_bytes) {
-      m_log->console("IP Len and PDU N_bytes mismatch\n");
-      m_log->console("IP Len and PDU N_bytes mismatch\n");
+      m_log->debug("IP Len and PDU N_bytes mismatch\n");
+      //m_log->console("IP Len and PDU N_bytes mismatch\n");
     }
     m_log->debug("S1-U PDU -- IP version %d, Total length %d\n", ip_pkt->version, ntohs(ip_pkt->tot_len));
-    m_log->console("S1-U PDU -- IP version %d, Total length %d\n", ip_pkt->version, ntohs(ip_pkt->tot_len));
+    //m_log->console("S1-U PDU -- IP version %d, Total length %d\n", ip_pkt->version, ntohs(ip_pkt->tot_len));
     m_log->debug("S1-U PDU -- IP src addr %s\n", srslte::gtpu_ntoa(ip_pkt->saddr).c_str());
-    m_log->console("S1-U PDU -- IP src addr %s\n", srslte::gtpu_ntoa(ip_pkt->saddr).c_str());
+    //m_log->console("S1-U PDU -- IP src addr %s\n", srslte::gtpu_ntoa(ip_pkt->saddr).c_str());
     m_log->debug("S1-U PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(ip_pkt->daddr).c_str());
-    m_log->console("S1-U PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(ip_pkt->daddr).c_str());
+    //m_log->console("S1-U PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(ip_pkt->daddr).c_str());
   }
 
   srslte::gtpu_header_t header;
@@ -113,72 +115,77 @@ void s11u_ep::send_s11u_pdu(uint32_t mme_teid, srslte::byte_buffer_t* msg)
   header.length       = msg->N_bytes;
   header.teid         = mme_teid;
 
-
-  printf("2222222222222222222222 s11u-ep 222222222222222222222\n");
   if (!gtpu_write_header(&header, msg, m_log)) { // key
-    m_log->console("Error writing GTP-U Header. Flags 0x%x, Message Type 0x%x\n", header.flags, header.message_type);
+    m_log->debug("Error writing GTP-U Header. Flags 0x%x, Message Type 0x%x\n", header.flags, header.message_type);
+    //m_log->console("Error writing GTP-U Header. Flags 0x%x, Message Type 0x%x\n", header.flags, header.message_type);
     return;
   }
 
-  printf("NB-IoT: s11u_ep::send_s11u_pdu------------------------------ Send packet to S11-U: Size %d\n", msg->N_bytes);
-
+  m_log->debug("ciot send_s11u_pdu, msglen:%d\n", msg->N_bytes);
+  //m_log->console("ciot send_s11u_pdu, msglen:%d\n", msg->N_bytes);
   if (sendto(m_s11u, msg->msg, msg->N_bytes, 0, (struct sockaddr*)&m_spgw_addr, sizeof(m_spgw_addr)) < 0) { 
-    perror("sendto");
+    //perror("sendto");
+    m_log->warning("ciot send_s11u_pdu, sendto failed\n");
+    //m_log->console("ciot send_s11u_pdu, sendto failed\n");
   }
 }
 
 void s11u_ep::handle_s11u_pdu(srslte::byte_buffer_t* msg)
 {
   srslte::gtpu_header_t header;
-  printf("+++++++++ origin msg length is %u ++++++++++++\n", msg->N_bytes);  // emm 06
-  for (uint8_t i = 0; i < 30; i++)
+  m_log->debug("ciot handle_s11u_pdu: origin msg length:%d\n", msg->N_bytes);
+  //m_log->console("ciot handle_s11u_pdu: origin msg length:%d\n", msg->N_bytes);
+  /*for (uint8_t i = 0; i < 30; i++)
   {
-    if (i % 10 == 0)  printf("\n");
-  
-    printf("%x  ", msg->msg[i]);
+    if (i % 10 == 0)  m_log->debug("\n");
+    m_log->debug(("%x  ", msg->msg[i]);
   }
+  m_log->debug(("\n");*/
 
   srslte::gtpu_read_header(msg, &header, m_log);
 
-  printf("-----------------------------------------------------------------\n");
-
-  for (uint8_t i = 0; i < 30; i++)
+  /*for (uint8_t i = 0; i < 30; i++)
   {
-    if (i % 10 == 0)  printf("\n");
-  
-    printf("%x  ", msg->msg[i]);
+    if (i % 10 == 0)  m_log->debug("\n");
+    m_log->debug(("%x  ", msg->msg[i]);
   }
+  m_log->debug(("\n");*/
 
-  printf("++++++++++++++++now msg length is %u ++++++++++++\n", msg->N_bytes);
-
-
-  printf("NB-IoT: s11u_ep::handle_s11u_pdu------------------------------ Received packet from S11-U: Size %d\n", msg->N_bytes);
-  for (uint32_t i = 0; i < msg->N_bytes;) {
+  m_log->debug("ciot handle_s11u_pdu: payload length:%d\n", msg->N_bytes);
+  //m_log->console("ciot handle_s11u_pdu: payload length:%d\n", msg->N_bytes);
+  /*for (uint32_t i = 0; i < msg->N_bytes;) {
     for (uint32_t j = 0; j < 16 && i < msg->N_bytes; i++, j++) {
-      printf("%02x ", msg->msg[i]);
+      m_log->debug(("%02x ", msg->msg[i]);
     }
-    printf("\n");
-  }
+    m_log->debug(("\n");
+  }*/
 
   uint32_t mme_ctrl_teid = header.teid;
-  printf("NB-IoT: s11u_ep::handle_s11u_pdu-------------------------TEID from header is %d\n", mme_ctrl_teid);
+  m_log->debug("ciot handle_s11u_pdu: TEID from header is %d\n", mme_ctrl_teid);
+  //m_log->console("ciot handle_s11u_pdu: TEID from header is %d\n", mme_ctrl_teid);
   // TODO: The teid does not match, tmp hack
   // mme_ctrl_teid                                  = 1;
   std::map<uint32_t, uint64_t>::iterator imsi_it = m_mme_ctr_teid_to_imsi->find(mme_ctrl_teid);
   if (imsi_it == m_mme_ctr_teid_to_imsi->end()) {
-    printf("=========handle_s11u_pdu================NB-IoT: s11u_ep::handle_s11u_pdu-------------------------Could not find IMSI from control TEID %d======================\n",
-           mme_ctrl_teid);
+    m_log->warning("ciot handle_s11u_pdu: Could not find IMSI from control TEID %d\n", mme_ctrl_teid);
+    //m_log->console("ciot handle_s11u_pdu: Could not find IMSI from control TEID %d\n", mme_ctrl_teid);
     return;
   } else {
-    printf("========handle_s11u_pdu=========NB-IoT: s11u_ep::handle_s11u_pdu-------------------------find IMSI=%ld from control TEID %d===================\n",
-           imsi_it->second,
-           mme_ctrl_teid);
+    m_log->debug("ciot handle_s11u_pdu: found IMSI=%ld from control TEID %d\n", 
+           imsi_it->second, mme_ctrl_teid);
+    //m_log->console("ciot handle_s11u_pdu: found IMSI=%ld from control TEID %d\n", 
+    //       imsi_it->second, mme_ctrl_teid);
   }
 
   nas* nas_ctx = m_s1ap->find_nas_ctx_from_imsi(imsi_it->second);
-//  printf("NB-IoT: handle_s11u_pdu------------- Receive User Pkt.\n");
+//  m_log->debug("ciot handle_s11u_pdu: Receive User Pkt.\n");
 //  m_s1ap->send_downlink_nas_transport(
 //      nas_ctx->m_ecm_ctx.enb_ue_s1ap_id, nas_ctx->m_ecm_ctx.mme_ue_s1ap_id, msg, nas_ctx->m_ecm_ctx.enb_sri);
+  if (!nas_ctx) {
+    m_log->error("ciot handle_s11u_pdu: nas_ctx null!\n");
+    //m_log->console("ciot handle_s11u_pdu: nas_ctx null!\n");
+    return;
+  }
   nas_ctx->send_esm_data_transport(msg);
 }
 

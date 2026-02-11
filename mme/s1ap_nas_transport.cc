@@ -103,7 +103,6 @@ bool s1ap_nas_transport::handle_initial_ue_message(const asn1::s1ap::init_ue_msg
   uint32_t enb_ue_s1ap_id = init_ue.protocol_ies.enb_ue_s1ap_id.value.value;
   liblte_mme_parse_msg_header((LIBLTE_BYTE_MSG_STRUCT*)nas_msg, &pd, &msg_type);
 
-  m_s1ap_log->console("NB-IoT ---------------------- Initial UE message: %d\n", msg_type);
   m_s1ap_log->console("Initial UE message: %s\n", liblte_nas_msg_type_to_string(msg_type));
   m_s1ap_log->info("Initial UE message: %s\n", liblte_nas_msg_type_to_string(msg_type));
 
@@ -202,7 +201,7 @@ bool s1ap_nas_transport::handle_uplink_nas_transport(const asn1::s1ap::ul_nas_tr
     if (!mac_valid) {
       m_s1ap_log->warning("Invalid MAC message. Even if security header indicates integrity protection (Maybe: "
                           "Identity Response or Authentication Response)\n");
-      m_s1ap_log->console("NB-IoT:------------------ Invalid MAC message. Even if security header indicates integrity protection (Maybe: "
+      m_s1ap_log->console("Invalid MAC message. Even if security header indicates integrity protection (Maybe: "
                           "Identity Response or Authentication Response)\n");
       // TODO: Bypass the MAC checking for testing. Remove in the future
       mac_valid = true;
