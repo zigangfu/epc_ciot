@@ -472,7 +472,7 @@ void mme_gtpc::handle_modify_bearer_response(srslte::gtpc_pdu* mb_resp_pdu)
   return;
 }
 
-bool mme_gtpc::send_delete_session_request(uint64_t imsi)
+bool mme_gtpc::send_delete_session_request(uint64_t imsi) //note 1
 {
   m_mme_gtpc_log->info("Sending GTP-C Delete Session Request request. IMSI %" PRIu64 "\n", imsi);
   srslte::gtpc_pdu del_req_pdu;

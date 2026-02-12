@@ -21,6 +21,7 @@
 
 #include "common/config.h"
 #include "spgw/gtpc.h"
+#include "gtpu/gtpu.h"
 #include <algorithm>
 #include <fcntl.h>
 #include <inttypes.h> // for printing uint64_t
@@ -166,10 +167,10 @@ void spgw::gtpc::handle_s11_pdu(srslte::byte_buffer_t* msg)
     case srslte::GTPC_MSG_TYPE_MODIFY_BEARER_REQUEST:
       handle_modify_bearer_request(pdu->header, pdu->choice.modify_bearer_request);
       break;
-    case srslte::GTPC_MSG_TYPE_DELETE_SESSION_REQUEST:
+    case srslte::GTPC_MSG_TYPE_DELETE_SESSION_REQUEST: // note 00
       handle_delete_session_request(pdu->header, pdu->choice.delete_session_request);
       break;
-    case srslte::GTPC_MSG_TYPE_RELEASE_ACCESS_BEARERS_REQUEST:
+    case srslte::GTPC_MSG_TYPE_RELEASE_ACCESS_BEARERS_REQUEST: // note 01
       handle_release_access_bearers_request(pdu->header, pdu->choice.release_access_bearers_request);
       break;
     case srslte::GTPC_MSG_TYPE_DOWNLINK_DATA_NOTIFICATION_ACKNOWLEDGE:
@@ -277,6 +278,8 @@ void spgw::gtpc::handle_modify_bearer_request(const struct srslte::gtpc_header& 
     m_gtpc_log->info("S11-U MME Rx User TEID 0x%x, MME Rx User IP %s\n", tunnel_ctx->dw_user_fteid.teid, inet_ntoa(addr3));
   }
 
+  printf("\n\nis s11u %d, dw_user_fteid.teid %u, IP %d\n\n", tunnel_ctx->is_s11u, tunnel_ctx->dw_user_fteid.teid, tunnel_ctx->dw_user_fteid.ipv4);
+
   // Setup IP to F-TEID map
   m_gtpu->modify_gtpu_tunnel(tunnel_ctx->ue_ipv4, tunnel_ctx->dw_user_fteid, tunnel_ctx->up_ctrl_fteid.teid, tunnel_ctx->is_s11u);
 
@@ -319,6 +322,9 @@ void spgw::gtpc::handle_delete_session_request(const srslte::gtpc_header&       
   }
   spgw_tunnel_ctx_t* tunnel_ctx = tunnel_it->second;
   in_addr_t          ue_ipv4    = tunnel_ctx->ue_ipv4;
+
+  printf("\n\n  start handle delete session request, teid %u, IP %s\n\n", ctrl_teid, srslte::gtpu_ntoa(ue_ipv4).c_str());
+
   m_gtpu->delete_gtpu_tunnel(ue_ipv4);
   delete_gtpc_ctx(ctrl_teid);
   return;
@@ -336,6 +342,8 @@ void spgw::gtpc::handle_release_access_bearers_request(const srslte::gtpc_header
   }
   spgw_tunnel_ctx_t* tunnel_ctx = tunnel_it->second;
   in_addr_t          ue_ipv4    = tunnel_ctx->ue_ipv4;
+
+  printf("\n\n  start handle release access bearers request, teid %u, IP %s\n\n", ctrl_teid, srslte::gtpu_ntoa(ue_ipv4).c_str());
 
   // Delete data tunnel & do NOT delete control tunnel
   m_gtpu->delete_gtpu_tunnel(ue_ipv4);
@@ -373,7 +381,7 @@ bool spgw::gtpc::send_downlink_data_notification(uint32_t spgw_ctr_teid)
   header->piggyback    = false;
   header->teid_present = true;
   header->teid         = tunnel_ctx->dw_ctrl_fteid.teid; // Send downlink data notification to the UE's MME Ctrl TEID
-  header->type         = srslte::GTPC_MSG_TYPE_DOWNLINK_DATA_NOTIFICATION;
+  header->type         = srslte::GTPC_MSG_TYPE_DOWNLINK_DATA_NOTIFICATION; // paing need 02
 
   dl_not->eps_bearer_id_present = true;
   dl_not->eps_bearer_id         = 5; // Only default bearer supported.

@@ -86,7 +86,10 @@ bool s1ap_paging::send_paging(uint64_t imsi, uint16_t erab_to_setup)
   }
 
   // UE Identity Index
-  uint16_t ue_index = imsi % 1024;
+  // lte
+  // uint16_t ue_index = imsi % 1024;
+  // nb 
+  uint16_t ue_index = imsi % 4096;
   paging.ue_id_idx_value.value.from_number(ue_index);
 
   // UE Paging Id

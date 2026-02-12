@@ -278,14 +278,14 @@ void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
   m_gtpu_log->debug("SGi PDU -- IP dst addr %s\n", srslte::gtpu_ntoa(iph->daddr).c_str());
 
   // Find user and control tunnel
-  gtpu_fteid_it = m_ip_to_usr_teid.find(iph->daddr);
+  gtpu_fteid_it = m_ip_to_usr_teid.find(iph->daddr); // paging : need not find
   if (gtpu_fteid_it != m_ip_to_usr_teid.end()) {
     usr_found = true;
     m_gtpu_log->debug("handle_sgi_pdu: Found S1U FTeid");
     enb_fteid = gtpu_fteid_it->second;
   }
   s11u_teid_it = m_ip_to_s11u_teid.find(iph->daddr);
-  if (s11u_teid_it != m_ip_to_s11u_teid.end()) {
+  if (s11u_teid_it != m_ip_to_s11u_teid.end()) { // paging : need not find
     m_gtpu_log->debug("handle_sgi_pdu: Found S11U FTeid");
     s11u_found = true;
     usr_found = true;
@@ -297,6 +297,8 @@ void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
     spgw_teid = gtpc_teid_it->second;
   }
 
+
+  printf("usr_found is %d, ctr_found %d/n", usr_found, ctr_found);
   // Handle SGi packet
   if (usr_found == false && ctr_found == false) {
     m_gtpu_log->debug("Packet for unknown UE.\n");
@@ -304,7 +306,9 @@ void spgw::gtpu::handle_sgi_pdu(srslte::byte_buffer_t* msg)
   } else if (usr_found == false && ctr_found == true) {
     m_gtpu_log->debug("Packet for attached UE that is not ECM connected.\n");
     m_gtpu_log->debug("Triggering Donwlink Notification Requset.\n");
-    m_gtpc->send_downlink_data_notification(spgw_teid);
+    m_gtpu_log->console("Packet for attached UE that is not ECM connected.\n");
+    m_gtpu_log->console("Triggering Donwlink Notification Requset.\n");
+    m_gtpc->send_downlink_data_notification(spgw_teid); // paging need 
     m_gtpc->queue_downlink_packet(spgw_teid, msg);
     return;
   } else if (usr_found == false && ctr_found == true) {
@@ -447,6 +451,9 @@ bool spgw::gtpu::modify_gtpu_tunnel(in_addr_t ue_ipv4, srslte::gtpc_f_teid_ie dw
     m_ip_to_s11u_teid[ue_ipv4] = up_ctrl_teid;
   }
   m_gtpu_log->info("Uplink C-TEID: 0x%x\n", up_ctrl_teid);
+
+  printf("\n\n modify_gtpu_tunnel : Uplink C-TEID: %d, dw_user_fteid.teid %d\n\n", up_ctrl_teid, dw_user_fteid.teid);
+
   m_ip_to_ctr_teid[ue_ipv4] = up_ctrl_teid;
   return true;
 }
@@ -475,8 +482,10 @@ bool spgw::gtpu::delete_gtpc_tunnel(in_addr_t ue_ipv4)
   // Remove Ctrl TEID from IP mapping.
   if (m_ip_to_ctr_teid.count(ue_ipv4)) {
     m_ip_to_ctr_teid.erase(ue_ipv4);
+    printf("\n\n delete gtpc tunnel IP %s\n\n", srslte::gtpu_ntoa(ue_ipv4).c_str());
   } else {
     m_gtpu_log->error("Could not find GTP-C Tunnel info to delete.\n");
+    printf("\n\n Could not find GTP-C Tunnel info to delete.  IP %s \n\n", srslte::gtpu_ntoa(ue_ipv4).c_str());
     return false;
   }
   return true;

@@ -151,6 +151,7 @@ void mme::run_thread()
     }
 
     m_s1ap_log->debug("Waiting for S1-MME or S11 Message\n");
+    m_s1ap_log->console("\nWaiting for S1-MME or S11 Message\n"); // wait 1
     int n = select(max_fd + 1, &m_set, NULL, NULL, NULL);
     if (n == -1) {
       m_s1ap_log->error("Error from select\n");
